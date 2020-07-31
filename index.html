@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hello World!</title>
+    <!-- https://electronjs.org/docs/tutorial/security#csp-meta-tag -->
+    <!-- 最新版本的 Bootstrap 核心 CSS 文件 -->
+    <link rel="stylesheet" href="index.css" type="text/css">
+    <script>
+        /**
+         * 以下脚本解决在Electron中不能使用jQuery的问题
+         */
+        window.nodeRequire = require;
+        delete window.require;
+        delete window.exports;
+        delete window.module;
+    </script>
+    <script src="https://cdn.bootcdn.net/ajax/libs/jquery/3.5.1/jquery.slim.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/css/bootstrap.min.css"
+          integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+    <!-- 最新的 Bootstrap 核心 JavaScript 文件 -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@3.3.7/dist/js/bootstrap.min.js"
+            integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa"
+            crossorigin="anonymous"></script>
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';"/>
+</head>
+<body>
+<div class="content">
+    <h2>Producer</h2>
+    <input id="responseContent" type="text" class="form-control" placeholder="在此处要返回的Data中包含的字符串" value="hello"/>
+    <div class="input-group" style="margin-top: 20px">
+        <input id="registerPrefix" type="text" class="form-control" placeholder="prefix, eg. /test" value="/test">
+        <span class="input-group-btn">
+        <button class="btn btn-default" type="button" onclick="doRegister(this)">注册</button>
+      </span>
+    </div>
+
+    <h2>Consumer</h2>
+
+    <div class="input-group" style="margin-top: 20px">
+        <input id="expressPrefix" type="text" class="form-control" placeholder="prefix, eg. /test" value="/test">
+        <span class="input-group-btn">
+        <button class="btn btn-default" type="button" onclick="expressInterest(this)">expressInterest</button>
+      </span>
+    </div>
+</div>
+</body>
+<script>
+    const {
+        Face,
+        KeyChain,
+        PibMemory,
+        TpmBackEndMemory,
+        Data,
+        SafeBag,
+        Blob,
+        Name
+    } = nodeRequire('typed-ndn-js');
+    const fs = nodeRequire('fs');
+
+    function doRegister(element) {
+        const face = new Face({
+            host: "localhost",
+            port: 6363
+        });
+        const content = $('#responseContent').val();
+        const keyChain = new KeyChain(new PibMemory(), new TpmBackEndMemory());
+        // import safe bag
+        keyChain.importSafeBag(new SafeBag(new Blob(fs.readFileSync("./qjm.safebag"))));
+        face.setCommandSigningInfo(keyChain, keyChain.getDefaultCertificateName());
+        face.registerPrefix(new Name($('#registerPrefix').val()), (prefix, interest, face, interestFilterId, filter) => {
+            console.log(`receive interest: ` + interest.toUri());
+            const data = new Data(interest.getName());
+            data.setContent(content);
+            console.log(`put content: ` + content, data.getContent().toString());
+            keyChain.sign(data);
+            face.putData(data);
+        }, prefix => {
+            alert(`注册前缀失败: ${prefix}`)
+            console.log("register failed");
+        }, (prefix, registeredPrefixId) => {
+            alert(`注册前缀成功: ${prefix}`)
+            console.log("register success");
+        })
+    }
+
+    function expressInterest() {
+        // expressPrefix
+        const {
+            Face,
+            Interest,
+            Data,
+            Name
+        } = nodeRequire('typed-ndn-js');
+
+        const face = new Face({
+            host: "127.0.0.1",
+            port: 6363
+        });
+
+        const interest = new Interest(new Name($('#expressPrefix').val()));
+        console.log(`expressInterest: ${interest.toUri()}`);
+        face.expressInterest(interest, (interest, data) => {        // onData
+            console.log(`Receive data: ${data.getContent().toString()}`);
+            alert(`Receive data: ${data.getContent().toString()}`);
+            face.close();
+        }, interest => {                    // onTimeout
+            alert(`expressInterest timeout: ${interest.toUri()}`)
+            console.log('onTimeout');
+        }, (interest, networkNack) => {     // onNack
+            console.log(`onNack: ${networkNack.reason}`);
+            alert(`onNack: ${networkNack.reason}`);
+        })
+
+    }
+</script>
+</html>
